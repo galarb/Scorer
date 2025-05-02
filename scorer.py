@@ -1,8 +1,7 @@
 from omnidriver import omnidriver
 from time import sleep
 from stepper import Stepper 
-import RPi.GPIO as GPIO
-from gpiozero import Button
+from gpiozero import Button,PWMOutputDevice
 from signal import pause
 
 
@@ -11,7 +10,8 @@ class scorer:
     def __init__(self, DOA, D1A, D2A, D3A, DOB, D1B, D2B, D3B,
              in1_pin, in2_pin, in3_pin, in4_pin,
              drib1_pin, drib2_pin,
-             RL1_pin, RL2_pin, RL3_pin):
+             RL1_pin, RL2_pin, RL3_pin,
+             modebutton_pin):
     
         self.motors = [
             omnidriver(in1=DOA, in2=D1A),
@@ -20,23 +20,24 @@ class scorer:
             omnidriver(in1=D2B, in2=D3B),
         ]
 
-        GPIO.setmode(GPIO.BCM)
-
-        # Set up output pins
-        GPIO.setup(drib1_pin, GPIO.OUT)
-        GPIO.setup(drib2_pin, GPIO.OUT)
+        self.modeflag = False
+       
 
         # Save pin numbers
         self.RL1 = Button(RL1_pin, pull_up=True, bounce_time=0.05)  # 50 ms debounce
         self.RL2 = Button(RL2_pin, pull_up=True, bounce_time=0.05)
         self.RL3 = Button(RL3_pin, pull_up=True, bounce_time=0.05)
+        self.modbutton = Button(modebutton_pin, pull_up=True, bounce_time=0.05)
+        self.modbutton_pin = modebutton_pin
         self.RL1_pin = RL1_pin
         self.RL2_pin = RL2_pin
         self.RL3_pin = RL3_pin
         
-        self.drib1 = GPIO.PWM(drib1_pin, 500)
-        self.drib2 = GPIO.PWM(drib2_pin, 500)
-
+        self.drib1 = PWMOutputDevice(drib1_pin)
+        self.drib2 = PWMOutputDevice(drib2_pin)
+        self.drib1.value = 0  # start PWM with 0% duty cycle
+        self.drib2.value = 0
+        
         self.kickermotor = Stepper(in1_pin, in2_pin, in3_pin, in4_pin, step_mode="full", speed=1000)
 
 
@@ -44,7 +45,8 @@ class scorer:
         self.RL1.when_pressed = self.escapeLeft
         self.RL2.when_pressed = self.escapeFront
         self.RL3.when_pressed = self.escapeRight
-
+        self.modbutton.when_pressed = self.changemode
+    
 
     def govector(self, vx, vy, ω):  #ω
         v1 = vx - vy - ω     # Front-right  (M1)
@@ -72,60 +74,41 @@ class scorer:
 
                         
     def dribble(self, speed):
-        pwm_value = min(max(abs(speed), 0), 100)
+        pwm_value = min(max(abs(speed) / 100.0, 0.0), 1.0)#convert to%
         if speed > 0:
-            self.drib1.ChangeDutyCycle(pwm_value)
-            self.drib2.ChangeDutyCycle(0)
+            self.drib1.value = pwm_value
+            self.drib2.value = 0
         elif speed < 0:
-            self.drib1.ChangeDutyCycle(0)
-            self.drib2.ChangeDutyCycle(pwm_value)
+            self.drib1.value = 0
+            self.drib2.value = pwm_value
         else:
-            self.drib1.ChangeDutyCycle(100)
-            self.drib2.ChangeDutyCycle(100)
-    
-    def checkboundary(self):
-        RL1 = GPIO.input(self.RL1_pin)
-        RL2 = GPIO.input(self.RL2_pin)
-        RL3 = GPIO.input(self.RL3_pin)
-
-        if RL1:  # RIGHT sensor triggered: go LEFT (270° → -x)
-            print('hit boundary - RiGHT sensor')
-            self.govector(-45, 0, 0)
-            sleep(2)
-            return True
-        elif RL2:  # BACK sensor triggered: go FORWARD (0° → +y)
-            print('hit boundary - BACK sensor')
-            self.govector(0, 45, 0)
-            sleep(2)
-            return True
-        elif RL3:  # LEFT sensor triggered: go RIGHT (90° → +x)
-            print('hit boundary - LEFT sensor')
-            self.govector(45, 0, 0)
-            sleep(2)
-            return True
-        else:
-            return False
-    
-    
+            self.drib1.value = 0
+            self.drib2.value = 0
     
     def escapeFront(self):
         print('back sensor triggered - escaping front')
-        self.govector(0, 20, 0)
+        self.govector(0, 60, 0)
         sleep(1)
         self.govector(0, 0, 0)
 
     
     def escapeRight(self):
         print('left sensor triggered - escaping right')
-        self.govector(20, 0, 0)
+        self.govector(60, 0, 0)
         sleep(1)
         self.govector(0, 0, 0)
-        
+
     def escapeLeft(self):
         print('right sensor triggered - escaping left')
-        self.govector(-20, 0, 0)
+        self.govector(-60, 0, 0)
         sleep(1)
         self.govector(0, 0, 0)
+
     
-            
+    def changemode(self):
+        self.modeflag = 1 - self.modeflag
+        if self.modeflag == 1:
+            print("HUNT MODE activated")
+        else:
+            print("IDLE MODE activated")
 
