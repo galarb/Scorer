@@ -3,6 +3,9 @@ from time import sleep
 from stepper import Stepper 
 from gpiozero import Button,PWMOutputDevice
 from signal import pause
+from RPLCD.i2c import CharLCD
+from threading import Thread
+
 
 
 
@@ -47,7 +50,11 @@ class scorer:
         self.RL3.when_pressed = self.escapeRight
         self.modbutton.when_pressed = self.changemode
     
+        self.lcd = CharLCD(i2c_expander='PCF8574', address=0x27, port=1,
+              cols=16, rows=2, charmap='A00')
 
+        self.lcd.write_string('Scorer Restarted Successfully!')
+        
     def govector(self, vx, vy, ω):  #ω
         v1 = vx - vy - ω     # Front-right  (M1)
         v2 = vx + vy - ω     # Back-right   (M2)
@@ -85,30 +92,115 @@ class scorer:
             self.drib1.value = 0
             self.drib2.value = 0
     
-    def escapeFront(self):
-        print('back sensor triggered - escaping front')
-        self.govector(0, 60, 0)
-        sleep(1)
-        self.govector(0, 0, 0)
-
-    
-    def escapeRight(self):
-        print('left sensor triggered - escaping right')
-        self.govector(60, 0, 0)
-        sleep(1)
-        self.govector(0, 0, 0)
-
     def escapeLeft(self):
         print('right sensor triggered - escaping left')
-        self.govector(-60, 0, 0)
-        sleep(1)
-        self.govector(0, 0, 0)
+        Thread(target=self._do_escape, args=(-60, 0)).start()
 
+    def escapeRight(self):
+        print('left sensor triggered - escaping right')
+        Thread(target=self._do_escape, args=(60, 0)).start()
+
+    def escapeFront(self):
+        print('back sensor triggered - escaping front')
+        Thread(target=self._do_escape, args=(0, 60)).start()
+
+    def _do_escape(self, vx, vy):
+        for _ in range(1000):
+            self.govector(vx, vy, 0)
+            sleep(0.001)  # 1 millisecond delay for smoother motion
+        self.govector(0, 0, 0)
+        
+    def get_modeflag(self):
+        #print(f"Current modeflag: {self.modeflag}")  # Debugging print
+        return self.modeflag
     
     def changemode(self):
         self.modeflag = 1 - self.modeflag
+        #print(f"Mode changed to: {self.modeflag}")  # Debugging print
         if self.modeflag == 1:
             print("HUNT MODE activated")
+            self.lcd.clear()
+            self.lcd.cursor_pos = (0, 1)
+            self.lcd.write_string('HUNT mode')
         else:
             print("IDLE MODE activated")
+            self.lcd.clear()
+            self.lcd.cursor_pos = (0, 1)
+            self.lcd.write_string('IDLE mode')
+    
+    def joyride(self):
+        print("Starting JOYRIDE demo...")
+        self.lcd.clear()  # Clear the screen before writing
+        self.lcd.write_string("Joyride!")
+
+        # Move forward
+        print("Forward")
+        self.lcd.clear()  # Clear the screen before writing
+        self.lcd.cursor_pos = (0, 0)
+        self.lcd.write_string("Moving Forward")
+        self.govector(0, -30, 0)
+        sleep(1)
+        
+        # Move backward
+        print("Backward")
+        self.lcd.clear()
+        self.lcd.cursor_pos = (0, 0)
+        self.lcd.write_string("Moving Backward")
+        self.govector(0, 30, 0)
+        sleep(1)
+        
+        # Strafe right
+        print("Right")
+        self.lcd.clear()
+        self.lcd.cursor_pos = (0, 0)
+        self.lcd.write_string("Strafing Right")
+        self.govector(30, 0, 0)
+        sleep(1)
+        
+        # Strafe left
+        print("Left")
+        self.lcd.clear()
+        self.lcd.cursor_pos = (0, 0)
+        self.lcd.write_string("Strafing Left")
+        self.govector(-30, 0, 0)
+        sleep(1)
+        
+        # Rotate clockwise
+        print("Rotate CW")
+        self.lcd.clear()
+        self.lcd.cursor_pos = (0, 0)
+        self.lcd.write_string("Rotating CW")
+        self.govector(0, 0, 30)
+        sleep(1)
+        
+        # Rotate counter-clockwise
+        print("Rotate CCW")
+        self.lcd.clear()
+        self.lcd.cursor_pos = (0, 0)
+        self.lcd.write_string("Rotating CCW")
+        self.govector(0, 0, -30)
+        sleep(1)
+        
+        # Diagonal top-right
+        print("Diagonal top-right")
+        self.lcd.clear()
+        self.lcd.cursor_pos = (0, 0)
+        self.lcd.write_string("Diagonal Top-Right")
+        self.govector(30, -30, 0)
+        sleep(1)
+        
+        # Diagonal bottom-left
+        print("Diagonal bottom-left")
+        self.lcd.clear()
+        self.lcd.cursor_pos = (0, 0)
+        self.lcd.write_string("Diagonal Bottom-Left")
+        self.govector(-30, 30, 0)
+        sleep(1)
+        
+        # Full stop
+        print("Stopping")
+        self.lcd.clear()
+        self.lcd.cursor_pos = (0, 0)
+        self.lcd.write_string("Stopping")
+        self.govector(0, 0, 0)
 
