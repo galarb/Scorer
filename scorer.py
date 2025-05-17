@@ -1,10 +1,13 @@
 from omnidriver import omnidriver
 from time import sleep
 from stepper import Stepper 
-from gpiozero import Button,PWMOutputDevice
+from gpiozero import Button,PWMOutputDevice, Device
 from signal import pause
 from RPLCD.i2c import CharLCD
 from threading import Thread
+from vcnl4040 import VCNL4040
+
+from gpiozero.pins.lgpio import LGPIOFactory
 
 
 
@@ -42,7 +45,8 @@ class scorer:
         self.drib2.value = 0
         
         self.kickermotor = Stepper(in1_pin, in2_pin, in3_pin, in4_pin, step_mode="full", speed=1000)
-
+        self.ballsensor = VCNL4040()
+        
 
         # Setup interrupts
         self.RL1.when_pressed = self.escapeLeft
@@ -76,9 +80,22 @@ class scorer:
     def stophard(self):
         for i in range(4):
             self.motors[i].stophard()
+    
     def kick(self):
         self.kickermotor.step_motor(1, 512)
-
+    def release(self):
+        self.kickermotor.release()
+    
+    def ball_loaded(self):
+        prox = self.ballsensor.read_proximity()
+        lux = self.ballsensor.read_lux_raw()
+        #print(f"Proximity: {prox}, Lux Raw: {lux}")
+        #sleep(0.5)
+        if (prox > 20):
+            print("ball loaded")
+            return True
+        else:
+            return False
                         
     def dribble(self, speed):
         pwm_value = min(max(abs(speed) / 100.0, 0.0), 1.0)#convert to%
@@ -122,11 +139,15 @@ class scorer:
             self.lcd.clear()
             self.lcd.cursor_pos = (0, 1)
             self.lcd.write_string('HUNT mode')
+            self.lcd.backlight_enabled = True
+
         else:
             print("IDLE MODE activated")
             self.lcd.clear()
             self.lcd.cursor_pos = (0, 1)
             self.lcd.write_string('IDLE mode')
+            self.lcd.backlight_enabled = False
+
     
     def joyride(self):
         print("Starting JOYRIDE demo...")
@@ -203,4 +224,3 @@ class scorer:
         self.lcd.cursor_pos = (0, 0)
         self.lcd.write_string("Stopping")
         self.govector(0, 0, 0)
-
