@@ -1,23 +1,32 @@
 from omnidriver import omnidriver
 from time import sleep
-from stepper import Stepper 
 from gpiozero import Button,PWMOutputDevice, Device
 from signal import pause
 from RPLCD.i2c import CharLCD
-from threading import Thread
+from threading import Thread, Timer
 from vcnl4040 import VCNL4040
-
 from gpiozero.pins.lgpio import LGPIOFactory
-
-
-
+from dcmotdriver import dcmotdriver
 
 class scorer:
-    def __init__(self, DOA, D1A, D2A, D3A, DOB, D1B, D2B, D3B,
-             in1_pin, in2_pin, in3_pin, in4_pin,
-             drib1_pin, drib2_pin,
-             RL1_pin, RL2_pin, RL3_pin,
-             modebutton_pin):
+    def __init__(self,
+                 motorA_pins,   # (DOA, D1A, D2A, D3A)
+                 motorB_pins,   # (DOB, D1B, D2B, D3B)
+                 kickerdribbler_pins,  # (D0C, D1C, D2C, D3C)
+                 sensor_pins, # (RL1_pin, RL2_pin, RL3_pin)
+                 modebutton_pin):
+
+        self.motorA_pins = motorA_pins
+        self.motorB_pins = motorB_pins
+        self.kickerdribbler_pins = kickerdribbler_pins
+        self.sensor_pins = sensor_pins
+        self.modebutton_pin = modebutton_pin
+        
+        D0C, D1C, D2C, D3C = kickerdribbler_pins
+        DOA, D1A, D2A, D3A = motorA_pins
+        DOB, D1B, D2B, D3B = motorB_pins
+        
+        RL1_pin, RL2_pin, RL3_pin = sensor_pins
     
         self.motors = [
             omnidriver(in1=DOA, in2=D1A),
@@ -39,12 +48,10 @@ class scorer:
         self.RL2_pin = RL2_pin
         self.RL3_pin = RL3_pin
         
-        self.drib1 = PWMOutputDevice(drib1_pin)
-        self.drib2 = PWMOutputDevice(drib2_pin)
-        self.drib1.value = 0  # start PWM with 0% duty cycle
-        self.drib2.value = 0
+        self.dribbler = dcmotdriver(D0C, D1C)
+        self.kickermotor = dcmotdriver(D2C, D3C)
         
-        self.kickermotor = Stepper(in1_pin, in2_pin, in3_pin, in4_pin, step_mode="full", speed=1000)
+        
         self.ballsensor = VCNL4040()
         
 
@@ -81,10 +88,46 @@ class scorer:
         for i in range(4):
             self.motors[i].stophard()
     
+    def start_dribbler(self, speed, duration=None):
+        def _run():
+            print(f"[Thread] Starting dribbler at speed {speed}")
+            self.dribbler.motgo(speed)
+            if duration:
+                print(f"[Thread] Will stop in {duration} seconds")
+                sleep(duration)
+                self.dribbler.stophard()
+                print("[Thread] Dribbler stopped after duration")
+        Thread(target=_run, daemon=False).start()
+
+    def _run_dribbler(self, speed, duration):
+        self.dribbler.motgo(speed)
+        print(f"Dribbler running at speed {speed}")
+
+        if duration:
+            Timer(duration, self.dribbler.stophard).start()
+
+    
+    def start_kicker(self, speed, duration=None):
+        def _run():
+            print(f"[Thread] Starting kicker at speed {speed}")
+            self.kickermotor.motgo(speed)
+            if duration:
+                print(f"[Thread] Will stop in {duration} seconds")
+                sleep(duration)
+                self.kickermotor.stophard()
+                print("[Thread] kickermotor stopped after duration")
+        Thread(target=_run, daemon=False).start()
+
+    def _run_kicker(self, speed, duration):
+        self.kickermotor.motgo(speed)
+        print(f"Kicker running at speed {speed}")
+        if duration:
+            Timer(duration, self.kickermotor.stophard).start()
+    
     def kick(self):
-        self.kickermotor.step_motor(1, 512)
-    def release(self):
-        self.kickermotor.release()
+        self.kickermotor.motgo(80)
+        self.dribbler.motgo(60)
+    
     
     def ball_loaded(self):
         prox = self.ballsensor.read_proximity()
@@ -97,17 +140,7 @@ class scorer:
         else:
             return False
                         
-    def dribble(self, speed):
-        pwm_value = min(max(abs(speed) / 100.0, 0.0), 1.0)#convert to%
-        if speed > 0:
-            self.drib1.value = pwm_value
-            self.drib2.value = 0
-        elif speed < 0:
-            self.drib1.value = 0
-            self.drib2.value = pwm_value
-        else:
-            self.drib1.value = 0
-            self.drib2.value = 0
+    
     
     def escapeLeft(self):
         print('right sensor triggered - escaping left')
