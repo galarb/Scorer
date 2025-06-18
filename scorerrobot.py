@@ -19,26 +19,34 @@ pilot = scorer(
 def robot_loop():
     try:
         while True:
-            if pilot.get_modeflag() == 0:
+            mode = pilot.get_modeflag()
+
+            if mode == 0:  # IDLE mode
                 pilot.govector(0, 0, 0)
                 pilot.dribbler.motgo(0)
                 pilot.kickermotor.motgo(0)
-                if(pilot.ball_loaded()):
+                if pilot.ball_loaded():
                     print('ball ready')
                 sleep(1)
-                
-            else:
-                pilot.start_dribbler(60, duration=2)  # Run dribbler at speed 60 for 2 seconds
-                pilot.start_kicker(80, duration=1.5)  # Kick for 1.5 seconds
+
+            elif mode == 1:  # HUNT mode
+                # Insert autonomous behavior here
+                #print("Hunt behavior running...")
                 sleep(3)
-                #pilot.joyride()
-                #pilot.dribble(80)
+
+            elif mode == 2:  # MANUAL mode
+                #print("Manual behavior running...")
+
+                # Manual control handler, probably from mobile
+                # pilot.update_from_manual_commands()  ← to be implemented
+                pass
+
             sleep(0.1)
+
     except KeyboardInterrupt:
         print("Stopped by user")
         pilot.stophard()
-        GPIO.cleanup()
-
+        
 # Start robot loop in background
 t = Thread(target=robot_loop)
 t.daemon = True
