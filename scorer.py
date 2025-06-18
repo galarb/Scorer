@@ -35,7 +35,7 @@ class scorer:
             omnidriver(in1=D2B, in2=D3B),
         ]
 
-        self.modeflag = False
+        self.modeflag = 0
        
 
         # Save pin numbers
@@ -66,7 +66,7 @@ class scorer:
 
         self.lcd.write_string('Scorer Restarted Successfully!')
         
-    def govector(self, vx, vy, ω):  #ω
+    def govector(self, vx, vy, ω):  #Holonomic drive
         v1 = vx - vy - ω     # Front-right  (M1)
         v2 = vx + vy - ω     # Back-right   (M2)
         v3 = vx - vy + ω     # Back-left    (M3)
@@ -143,14 +143,20 @@ class scorer:
     
     
     def escapeLeft(self):
+        if self.modeflag != 1:
+            return  # Ignore in IDLE and manual mode
         print('right sensor triggered - escaping left')
         Thread(target=self._do_escape, args=(-60, 0)).start()
 
     def escapeRight(self):
+        if self.modeflag != 1:
+            return  # Ignore in IDLE and manual mode
         print('left sensor triggered - escaping right')
         Thread(target=self._do_escape, args=(60, 0)).start()
 
     def escapeFront(self):
+        if self.modeflag != 1:
+            return  # Ignore in IDLE and manual mode
         print('back sensor triggered - escaping front')
         Thread(target=self._do_escape, args=(0, 60)).start()
 
@@ -165,21 +171,37 @@ class scorer:
         return self.modeflag
     
     def changemode(self):
-        self.modeflag = 1 - self.modeflag
-        #print(f"Mode changed to: {self.modeflag}")  # Debugging print
-        if self.modeflag == 1:
+        self.modeflag = (self.modeflag + 1) % 3  # Cycles through 0,1,2
+
+        self.lcd.clear()
+        self.lcd.cursor_pos = (0, 1)
+
+        if self.modeflag == 0:
+            print("IDLE MODE activated")
+            self.lcd.write_string('IDLE mode')
+            self.lcd.backlight_enabled = False
+
+            
+
+        elif self.modeflag == 1:
             print("HUNT MODE activated")
-            self.lcd.clear()
-            self.lcd.cursor_pos = (0, 1)
             self.lcd.write_string('HUNT mode')
             self.lcd.backlight_enabled = True
 
-        else:
-            print("IDLE MODE activated")
-            self.lcd.clear()
-            self.lcd.cursor_pos = (0, 1)
-            self.lcd.write_string('IDLE mode')
-            self.lcd.backlight_enabled = False
+           
+
+        elif self.modeflag == 2:
+            print("MANUAL MODE activated")
+            self.lcd.write_string('MANUAL mode')
+            self.lcd.backlight_enabled = True
+            self.update_from_manual_commands()
+
+    def update_from_manual_commands(self):
+        # Placeholder: read from serial, socket, etc.
+        # For now, just print that we're in manual mode
+        print("Awaiting manual commands...")
+           
+
 
     
     def joyride(self):
