@@ -4,6 +4,8 @@ from threading import Thread
 from signal import pause
 from gpiozero import Device
 from gpiozero.pins.lgpio import LGPIOFactory
+from rpiuart import RpiUart
+
 
 # Initialize scorer 
 pilot = scorer(
@@ -13,7 +15,8 @@ pilot = scorer(
     sensor_pins=(24, 23, 18),
     modebutton_pin=4
 )
-
+uart = RpiUart()
+uart.start()
 
 # Worker thread function
 def robot_loop():
@@ -30,9 +33,18 @@ def robot_loop():
                 sleep(1)
 
             elif mode == 1:  # HUNT mode
-                # Insert autonomous behavior here
-                #print("Hunt behavior running...")
-                sleep(3)
+                msg = uart.get_message()
+                if msg:
+                    if msg == "None":
+                        print("No ball detected")
+                    else:
+                        try:
+                            x, y, area = map(int, msg.split(','))
+                            print(f"Ball: x={x}, y={y}, area={area}")
+                        except ValueError:
+                            print(f"Bad data: {msg}")
+                sleep(0.01)
+               
 
             elif mode == 2:  # MANUAL mode
                 #print("Manual behavior running...")
@@ -54,5 +66,7 @@ t.start()
 
 # Keep main thread alive to handle GPIO IRQs
 pause()
+
+
 
 
