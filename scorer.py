@@ -7,13 +7,14 @@ from threading import Thread, Timer
 from vcnl4040 import VCNL4040
 from gpiozero.pins.lgpio import LGPIOFactory
 from dcmotdriver import dcmotdriver
+from rpiuart import RpiUart
 
 class scorer:
     def __init__(self,
                  motorA_pins,   # (DOA, D1A, D2A, D3A)
                  motorB_pins,   # (DOB, D1B, D2B, D3B)
                  kickerdribbler_pins,  # (D0C, D1C, D2C, D3C)
-                 sensor_pins, # (RL1_pin, RL2_pin, RL3_pin)
+                 sensor_pins, # (RL1_pin, RL2_pin, RL3_pin) R, B, L
                  modebutton_pin):
 
         self.motorA_pins = motorA_pins
@@ -60,7 +61,10 @@ class scorer:
         self.RL2.when_pressed = self.escapeFront
         self.RL3.when_pressed = self.escapeRight
         self.modbutton.when_pressed = self.changemode
-    
+        
+        self.uart = RpiUart()
+        self.uart.start()
+        
         self.lcd = CharLCD(i2c_expander='PCF8574', address=0x27, port=1,
               cols=16, rows=2, charmap='A00')
 
@@ -201,9 +205,81 @@ class scorer:
         # For now, just print that we're in manual mode
         print("Awaiting manual commands...")
            
+    def check_cam(self):
+        msg = self.uart.get_message()
+        if msg:
+            if msg == "None":
+                print("No ball detected")
+                return False
+            else:
+                try:
+                    x, y, area = map(int, msg.split(','))
+                    #print(f"RAW Ball position: x={x}, y={y}, area={area}")
+                    self.image_vector_to_drive(x, y, area)
 
-
+                    return True
+                except ValueError:
+                    print(f"Bad data: {msg}")
+                    return False
+                            
     
+    def image_vector_to_drive(self, Vx_img, Vy_img, area,
+                          img_width=320, img_height=240, desired_area=5000):
+        # Calculate center
+        cx = img_width / 2
+        cy = img_height / 2
+
+        # Relative offsets from center
+        dx = Vx_img - cx     # +dx = right, -dx = left
+        dy = (img_height - Vy_img)     # +dy = the ball is ahead always
+
+        # Apply scaling and invert Y for robot frame
+        omega = dx      # rotation based on horizontal offset
+
+        print(f"Relative position: dx={dx}, dy={dy}, omega={omega}")
+        self.govector(0, 0, omega)
+        return dx, dy, omega
+    
+    def scan(self, rotation_speed=30):
+        print("Starting scan...")
+        self.govector(0, 0, rotation_speed)  # start rotating
+
+        while True:
+            if self.check_cam():  # ball detected
+                break
+            sleep(0.01)  # avoid maxing CPU
+
+        self.govector(0, 0, 0)  # stop rotation
+        print("Scan complete.")
+    
+    def hunt(self, forward_gain=1.0):
+        print("Starting hunt...")
+        
+        # Step 1: scan until we see the ball
+        self.scan(rotation_speed=30)
+        
+        # Step 2: chase it
+        while True:
+            if not self.check_cam():  # ball not detected
+                continue
+            
+            # Get relative position from camera
+            dx, dy, omega = self.image_vector_to_drive(x, y, area)
+            
+            # Ignore dx and omega — only forward speed
+            vy = forward_gain * dy
+            
+            self.govector(0, vy, 0)  # move forward toward ball
+            
+            # Optional stop condition: if ball is very close
+            if area > 15000:  # adjust threshold
+                print("Ball reached!")
+                self.govector(0, 0, 0)
+                break
+            
+            sleep(0.01)
+
+            
     def joyride(self):
         print("Starting JOYRIDE demo...")
         self.lcd.clear()  # Clear the screen before writing
@@ -279,3 +355,4 @@ class scorer:
         self.lcd.cursor_pos = (0, 0)
         self.lcd.write_string("Stopping")
         self.govector(0, 0, 0)
+
