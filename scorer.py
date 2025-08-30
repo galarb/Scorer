@@ -8,7 +8,7 @@ from vcnl4040 import VCNL4040
 from gpiozero.pins.lgpio import LGPIOFactory
 from dcmotdriver import dcmotdriver
 from rpiuart import RpiUart
-
+from mqttReceiver import MqttReceiver
 class scorer:
     def __init__(self,
                  motorA_pins,   # (DOA, D1A, D2A, D3A)
@@ -64,6 +64,9 @@ class scorer:
         
         self.uart = RpiUart()
         self.uart.start()
+        
+        self.mqtt_rx = MqttReceiver(self)
+        self.mqtt_rx.start()
         
         self.lcd = CharLCD(i2c_expander='PCF8574', address=0x27, port=1,
               cols=16, rows=2, charmap='A00')
@@ -355,4 +358,35 @@ class scorer:
         self.lcd.cursor_pos = (0, 0)
         self.lcd.write_string("Stopping")
         self.govector(0, 0, 0)
+
+    def on_message(self, client, userdata, msg):
+        try:
+            data = json.loads(msg.payload.decode())
+            vx = data.get("vx", 0)
+            vy = data.get("vy", 0)
+            omega = data.get("omega", 0)
+            dribbler = data.get("dribbler", 0)
+            kick = data.get("kick", 0)
+
+            if self.get_modeflag() == 2 or 0==0:  # MANUAL mode only
+                self.govector(vx, vy, omega)
+                self.dribbler.motgo(60 if dribbler else 0)
+
+                if kick:
+                    Thread(target=self._kick_once).start()
+
+            self.lcd_write(f"Vx:{vx} Vy:{vy}", line=0)
+            self.lcd_write(f"Om:{omega} Dr:{dribbler} K:{kick}", line=1)
+
+        except Exception as e:
+            print("Error processing MQTT message:", e)
+            self.lcd_write("MQTT ERROR", line=0)
+            self.lcd_write("", line=1)
+    def check_joystick(self):
+        pass
+        
+    def _kick_once(self):
+        self.kickermotor.motgo(80)
+        sleep(0.3)  # adjust kick pulse duration
+        self.kickermotor.stophard()
 
