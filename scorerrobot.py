@@ -37,7 +37,7 @@ def robot_loop():
                 sleep(0.12)
 
             elif mode == 2:  # MANUAL mode
-                # pilot.update_from_manual_commands()  ← to be implemented
+                pilot.check_joystick()
                 pass
 
             sleep(0.1)
